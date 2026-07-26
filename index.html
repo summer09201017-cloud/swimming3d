@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0b3550" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <title>游泳(自由式)3D・LA 2028 Swimming 3D</title>
+  </head>
+  <body>
+    <div class="app-shell">
+      <canvas id="gameCanvas" aria-label="游泳(自由式)3D 遊戲畫面"></canvas>
+
+      <div class="top-bar">
+        <div class="score-card team-home">
+          <span class="score-label">名次</span>
+          <strong id="rankLabel">—</strong>
+        </div>
+        <div class="center-board">
+          <div class="clock-stack period-stack">
+            <span class="mini-label">模式</span>
+            <strong id="modeCode">競速</strong>
+          </div>
+          <div class="clock-stack">
+            <span class="mini-label">趟數</span>
+            <strong id="lapLabel">1/2</strong>
+            <span class="stack-subtext" id="timeLabel">0:00.0</span>
+          </div>
+          <div class="clock-stack accent">
+            <span class="mini-label">節奏</span>
+            <strong id="rhythmTopLabel">—</strong>
+            <span class="stack-subtext" id="phaseLabel">主選單</span>
+          </div>
+        </div>
+        <div class="score-card team-away">
+          <span class="score-label">速度</span>
+          <strong id="speedTopLabel">0.0 m/s</strong>
+        </div>
+      </div>
+
+      <button id="pauseButton" class="pause-fab">暫停</button>
+
+      <canvas id="miniMap" class="mini-map" width="190" height="140" hidden aria-label="泳池小地圖"></canvas>
+
+      <div class="message-ribbon" id="statusMessage">選擇模式後開始比賽。</div>
+      <div class="commentary-bar" id="commentaryBar" hidden></div>
+
+      <aside class="side-panel">
+        <div class="panel-block hero-panel">
+          <p class="eyebrow">Swimming 3D · LA 2028</p>
+          <h1>游泳(自由式)3D</h1>
+          <p class="panel-copy">
+            左右交替划水踩節奏、綠窗按 S 換氣、近池壁按 W 蹬牆轉身——50m 來回 100m,先觸壁就贏!
+          </p>
+        </div>
+
+        <div class="panel-block compact-grid">
+          <div>
+            <span class="mini-label">遊戲模式</span>
+            <strong id="modeLabel">單人競速</strong>
+          </div>
+          <div>
+            <span class="mini-label">難度</span>
+            <strong id="difficultyLabel">標準</strong>
+          </div>
+          <div>
+            <span class="mini-label">領先/落後</span>
+            <strong id="gapLabel">—</strong>
+          </div>
+          <div>
+            <span class="mini-label">趟數</span>
+            <strong id="lapSideLabel">—</strong>
+          </div>
+          <div>
+            <span class="mini-label">速度</span>
+            <strong id="speedLabel">0.0 m/s</strong>
+          </div>
+          <div>
+            <span class="mini-label">音效狀態</span>
+            <strong id="audioStatus">開啟</strong>
+          </div>
+          <div>
+            <span class="mini-label">最佳成績</span>
+            <strong id="saveStatus">尚無</strong>
+          </div>
+        </div>
+
+        <div class="panel-block meter-block">
+          <div class="meter-copy">
+            <span class="mini-label">速度</span>
+            <strong id="speedMeterText">左右交替划水</strong>
+          </div>
+          <div class="meter-track">
+            <div id="speedMeterFill" class="meter-fill shot"></div>
+          </div>
+
+          <div class="meter-copy stamina-copy">
+            <span class="mini-label">節奏穩定度(左右交替)</span>
+            <strong id="rhythmValue">—</strong>
+          </div>
+          <div class="meter-track">
+            <div id="rhythmFill" class="meter-fill shot"></div>
+          </div>
+
+          <div class="meter-copy stamina-copy">
+            <span class="mini-label">氣量(綠窗按 S 換氣)</span>
+            <strong id="airValue">—</strong>
+          </div>
+          <div class="meter-track stamina">
+            <div id="airFill" class="meter-fill stamina-fill"></div>
+          </div>
+        </div>
+
+        <div class="panel-block action-buttons">
+          <button id="menuButton" class="primary">首頁選單</button>
+          <button id="loadButton">最佳成績</button>
+          <button id="audioButton">音效開啟</button>
+          <button id="cameraButton">視角切換</button>
+        </div>
+
+        <div class="panel-block">
+          <button id="installButton" class="install-button" hidden>安裝到手機</button>
+          <p class="install-hint" id="installHint">
+            Android 可直接安裝；iPhone 可用分享選單加入主畫面。
+          </p>
+        </div>
+
+        <div class="panel-block instructions">
+          <p class="mini-label">操作</p>
+          <p>出發: 空白鍵或點畫面</p>
+          <p>P1 划水: A / D 左右交替｜換氣: S｜轉身: W</p>
+          <p>P2(雙人): ← / → 交替｜換氣: ↓｜轉身: ↑</p>
+          <p>單人時方向鍵也可以玩(等同 A/D/S/W)</p>
+          <p>平板: 點畫面=自動交替划,「換氣」「轉身」鈕照綠窗按</p>
+          <p>視角切換: V｜暫停: Esc / P</p>
+        </div>
+      </aside>
+
+      <div class="touch-layer" id="touchControls">
+        <div class="dpad">
+          <button data-action="p1left" aria-label="左臂划水">◀ 左划</button>
+          <button data-action="p1right" aria-label="右臂划水">右划 ▶</button>
+        </div>
+        <div class="action-pad">
+          <button data-action="p1breath" class="shoot">換氣</button>
+          <button data-action="p1turn">轉身</button>
+          <button data-action="camera">視角</button>
+        </div>
+      </div>
+
+      <div class="overlay-shell" id="matchOverlay" aria-live="polite">
+        <div class="overlay-card">
+          <p class="eyebrow" id="overlayEyebrow">比賽暫停</p>
+          <h2 id="overlayTitle">暫停中</h2>
+          <p id="overlayText" class="overlay-copy">準備好再回到水裡。</p>
+          <div class="button-row overlay-actions">
+            <button id="resumeButton" class="primary">繼續比賽</button>
+            <button id="overlayMenuButton">回到首頁</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="home-screen visible" id="homeScreen" aria-live="polite">
+        <div class="home-backdrop"></div>
+        <div class="home-content">
+          <div class="home-hero">
+            <p class="eyebrow">Swimming 3D · LA 2028</p>
+            <h2>划節奏、換好氣、蹬牆轉身、衝觸壁!</h2>
+            <p>
+              左右交替按鍵=雙臂划水,節奏穩=越游越快;氣量會慢慢下降,看到綠色換氣窗按 S 側頭換氣(窗外按會嗆水、只減速不失敗);快到池壁時綠窗亮起按 W=蹬牆轉身加速!
+            </p>
+          </div>
+
+          <div class="home-grid">
+            <section class="home-card">
+              <p class="eyebrow">遊戲模式</p>
+              <div class="mode-card-grid" id="modeCardGrid">
+                <button class="mode-card" data-mode="race">
+                  <strong>單人競速</strong>
+                  <span>跟 AI 選手隔壁水道對決,先觸壁的贏</span>
+                </button>
+                <button class="mode-card" data-mode="duel2p">
+                  <strong>雙人同機</strong>
+                  <span>P1(紅帽)=A/D+S+W;P2(藍帽)=←/→+↓+↑</span>
+                </button>
+                <button class="mode-card" data-mode="practice">
+                  <strong>練習池</strong>
+                  <span>無限趟數,自由練節奏、換氣與轉身</span>
+                </button>
+              </div>
+              <p id="modeDescription" class="mode-description"></p>
+            </section>
+
+            <section class="home-card">
+              <p class="eyebrow">比賽設定</p>
+              <label class="field-label" for="menuDifficultySelect">難度(定氣量消耗與 AI 快慢)</label>
+              <select id="menuDifficultySelect">
+                <option value="kids">幼兒（超簡單・自動換氣）</option>
+                <option value="child">兒童（簡單）</option>
+                <option value="easy">入門</option>
+                <option value="normal">標準</option>
+                <option value="hard">職業</option>
+              </select>
+
+              <label class="field-label" for="audioSelect">音效與播報</label>
+              <select id="audioSelect">
+                <option value="on">開啟</option>
+                <option value="off">靜音</option>
+              </select>
+
+              <div class="home-mode-meta">
+                <div>
+                  <span class="mini-label">模式摘要</span>
+                  <strong id="modeMetaTitle">單人競速</strong>
+                </div>
+                <div>
+                  <span class="mini-label">目標</span>
+                  <strong id="modeMetaGoal">先觸壁者勝</strong>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div class="button-row home-actions">
+            <button id="startMatchButton" class="primary">開始比賽</button>
+            <button id="continueSavedButton">看最佳成績</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+      <div class="power-panel-big" id="bigPower" hidden><span id="bigPowerLabel">划水節奏(左右交替)</span><div class="big-track"><div class="big-fill" id="bigPowerFill"></div></div></div>
+    <script type="module" src="/src/main.js"></script>
+  <script>
+// play-stats 打點(雙平台版:CF Pages/Netlify 都會打;只擋本機開發)
+window.psPing = function (suffix, t) {
+  try {
+    if (['localhost', '127.0.0.1'].includes(location.hostname)) return;
+    var q = 'g=swimming3d' + (suffix || '') + (t != null ? '&t=' + Math.round(t) : '');
+    navigator.sendBeacon?.('https://hfpc-play-stats.summer09201017.workers.dev/api/ping?' + q);
+  } catch (_) {}
+};
+window.psPing('');
+</script>
+
+<script>
+// ← 返回大廳(skill back-to-lobby-button):孩子卡住要能離開。DOM 疊在畫面上,不畫進 canvas。
+// 退出 ≠ 過關:這裡只導頁,絕不呼叫 onComplete。嵌入時先讓宿主處理。
+(function () {
+  var LOBBY = 'https://hfpc-olympics.summer09201017.workers.dev';
+  function go() {
+    try { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen(); } catch (e) {}
+    if (window.parent && window.parent !== window) {          // 嵌入:交給宿主收掉關卡視窗
+      try { window.parent.postMessage({ type: 'hfpc-exit' }, '*'); } catch (e) {}
+      if (history.length > 1) { history.back(); return; }
+    }
+    location.href = LOBBY;
+  }
+  function add() {
+    if (document.querySelector('[data-hfpc-lobby]')) return;
+    var b = document.createElement('button');
+    b.textContent = '← 返回大廳';
+    b.setAttribute('aria-label', '返回大廳');
+    b.setAttribute('data-hfpc-lobby', '1');
+    b.style.cssText = 'position:fixed;z-index:2147483000;' +
+      'top:calc(8px + env(safe-area-inset-top));left:calc(8px + env(safe-area-inset-left));' +
+      'min-width:44px;min-height:44px;padding:9px 14px;border:0;border-radius:12px;' +
+      'font:600 15px/1.2 system-ui,"Microsoft JhengHei",sans-serif;' +
+      'background:rgba(0,0,0,.58);color:#fff;cursor:pointer;-webkit-tap-highlight-color:transparent';
+    b.addEventListener('click', go);
+    (document.body || document.documentElement).appendChild(b);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', add); else add();
+})();
+</script>
+
+<script>
+// 🎵 背景音樂(BGM 百曲庫 0726,skill procedural-bgm):零音檔 Web Audio。
+// 曲子由站名雜湊決定=全艦隊每站不同首;有關卡的遊戲可呼叫 window.hfpcBgmLevel(n) 換曲。
+// 音域 330Hz+/音量經 AnalyserNode 校正(手機喇叭放不出 500Hz 以下——0726 實測)。
+(function () {
+  var SITE = 'swimming3d';
+  var muted = false; try { muted = localStorage.getItem('bgm-muted') === '1'; } catch (e) {}
+  var ctx = null, timer = 0, step = 0, cur = null, started = false;
+  function variant(lv) {
+    var SC = [[523.25,587.33,659.25,783.99,880],[440,523.25,587.33,659.25,783.99],[392,440,493.88,587.33,659.25],[349.23,392,440,523.25,587.33],[587.33,659.25,739.99,880,987.77],[329.63,392,440,493.88,587.33],[466.16,523.25,587.33,698.46,783.99],[415.3,466.16,554.37,622.25,739.99]];
+    var PT = [[0,1,2,3,4,3,2,1],[0,2,4,2,1,3,2,0],[4,3,2,1,0,1,2,3],[0,0,2,2,4,4,2,-1],[0,2,1,3,2,4,3,-1],[4,2,0,2,4,2,1,0],[0,3,1,4,2,0,3,-1],[2,4,2,0,1,3,4,2]];
+    var x = 2166136261, s = SITE + '|' + (lv || 1);
+    for (var i = 0; i < s.length; i++) { x ^= s.charCodeAt(i); x = Math.imul(x, 16777619) >>> 0 }
+    var mul = [1, 1.122, 0.891][(x >>> 13) % 3];
+    var sc = SC[x % 8].map(function (f) { return f * mul });
+    var p = PT[(x >>> 3) % 8].concat(PT[(x >>> 6) % 8]);
+    var wave = ['triangle', 'square', 'sine'][(x >>> 11) % 3];
+    return { mel: p.map(function (i) { return i < 0 ? 0 : sc[i] }),
+             bass: [0,0,3,3,4,4,3,3,0,0,3,3,4,4,0,0].map(function (i) { return sc[i] / 2 }),
+             wave: wave, vol: wave === 'square' ? 0.2 : wave === 'sine' ? 0.42 : 0.32,
+             ms: [190, 220, 250, 290][(x >>> 9) % 4] };
+  }
+  function blip(f, dur, type, vol) {
+    if (muted || !ctx) return;
+    try {
+      var o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = type; o.frequency.value = f;
+      g.gain.setValueAtTime(vol, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(); o.stop(ctx.currentTime + dur + 0.02);
+    } catch (e) {}
+  }
+  function tick() {
+    if (muted || !cur) return;
+    var i = step % 16;
+    if (cur.bass[i]) blip(cur.bass[i], cur.ms / 1000 * 1.8, 'sine', 0.02);
+    if (step % 2 === 0) { var mf = cur.mel[(step / 2) % 16 | 0]; if (mf) blip(mf, cur.ms / 1000 * 1.7, cur.wave, cur.vol); }
+    step++;
+  }
+  window.hfpcBgmLevel = function (lv) { cur = variant(lv); step = 0; if (timer) { clearInterval(timer); timer = setInterval(tick, cur.ms); } };
+  function start() {
+    if (started || muted) return; started = true;
+    try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
+    cur = cur || variant(1);
+    timer = setInterval(tick, cur.ms);
+  }
+  addEventListener('pointerdown', function () { start(); try { if (ctx && ctx.state === 'suspended') ctx.resume(); } catch (e) {} }, { passive: true });
+  document.addEventListener('visibilitychange', function () { if (!ctx) return; try { document.hidden ? ctx.suspend() : ctx.resume(); } catch (e) {} });
+  // 🎵 靜音鈕(放「← 返回大廳」鈕下方,同一套視覺)
+  function addBtn() {
+    if (document.querySelector('[data-hfpc-bgm]')) return;
+    var b = document.createElement('button');
+    b.textContent = muted ? '🔇' : '🎵';
+    b.setAttribute('aria-label', '開關背景音樂');
+    b.setAttribute('data-hfpc-bgm', '1');
+    b.style.cssText = 'position:fixed;z-index:2147483000;' +
+      'top:calc(60px + env(safe-area-inset-top));left:calc(8px + env(safe-area-inset-left));' +
+      'min-width:44px;min-height:44px;border:0;border-radius:12px;font-size:17px;' +
+      'background:rgba(0,0,0,.58);color:#fff;cursor:pointer;-webkit-tap-highlight-color:transparent';
+    b.addEventListener('click', function () {
+      muted = !muted;
+      try { localStorage.setItem('bgm-muted', muted ? '1' : '0'); } catch (e) {}
+      b.textContent = muted ? '🔇' : '🎵';
+      if (!muted) start();
+    });
+    (document.body || document.documentElement).appendChild(b);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', addBtn); else addBtn();
+})();
+</script>
+</body>
+</html>

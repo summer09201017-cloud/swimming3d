@@ -1,0 +1,24 @@
+{
+  "name": "游泳(自由式)3D・LA 2028",
+  "short_name": "3D游泳",
+  "description": "可在手機與 PC 遊玩的游泳(自由式)3D——左右交替划水踩節奏、綠窗換氣、池壁蹬牆轉身,單人對 AI 或雙人同機競速!",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a2230",
+  "theme_color": "#0b3550",
+  "orientation": "landscape",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
