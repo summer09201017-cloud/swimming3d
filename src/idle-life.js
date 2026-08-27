@@ -139,6 +139,71 @@ export function crowdCheer(owner) {
 //   ⚠③ **手臂長度是各站人物工廠的事,不是本檔**:肩在 y=1.22、手臂總長 0.38 的話,
 //     指尖只到 1.60 = **剛好齊頭頂**(billiards3d 首版實測)⇒ 再怎麼轉都不會「過頭」。
 //     要真的過頭,工廠端的上臂+前臂總長需 ≥0.5(肩 1.22 + 0.5 = 1.72 > 頭頂 1.60)。
+/* ── 手臂長度自動補足(2026-08-28)────────────────────────────────────────────
+   問題:「舉高過頭」不是角度問題是**長度**問題,而各站觀眾的尺度天差地遠
+   (實測肩高 0.37~1.72、上臂 0.13~0.30 都有)⇒ 沒有一組通用的數字可以寫死,
+   逐站手改 15 個 repo 又脆弱又會漏。
+   解法:第一次驅動時**自己量一次**,不夠長就把手臂沿自身軸拉長(只改 pivot.scale.y,
+   不動幾何、不需要 import three)。之後每幀都是純動畫,零成本。
+
+   量法(全部在 rig 的局部座標,單位一致,不必管各站縮放):
+     手臂垂放時往下延伸多少 = 沿著 pivot 底下最深的鏈累加 position.y,再減末端半長
+     頭頂高度            = headGroup.position.y + 頭部件裡最高的 (position.y + 半徑)
+     舉直時指尖高度       = pivot.position.y + 手臂長度
+   指尖低於「頭頂 + margin」就放大,倍率夾在 [1, 2.4](夾住是為了:量錯時寧可
+   不夠長,也不要生出一雙掃到地板的手)。 */
+function chainDrop(node) {          // 回傳鏈往下最遠的局部 y(負值)
+  let deepest = 0;
+  const walk = (o, acc) => {
+    if (!o) return;
+    const y = acc + (o.position ? o.position.y : 0);
+    const p = o.geometry && o.geometry.parameters;
+    const half = p ? (p.length || p.height || 0) / 2 + (p.radius || 0) : 0;
+    if (y - half < deepest) deepest = y - half;
+    if (o.children) for (const ch of o.children) walk(ch, y);
+  };
+  if (node && node.children) for (const ch of node.children) walk(ch, 0);
+  return deepest;
+}
+function chainRise(node) {          // 回傳鏈往上最遠的局部 y(正值)
+  let top = 0;
+  const walk = (o, acc) => {
+    if (!o) return;
+    const y = acc + (o.position ? o.position.y : 0);
+    const p = o.geometry && o.geometry.parameters;
+    const half = p ? (p.length || p.height || 0) / 2 + (p.radius || 0) : 0;
+    if (y + half > top) top = y + half;
+    if (o.children) for (const ch of o.children) walk(ch, y);
+  };
+  if (node && node.children) for (const ch of node.children) walk(ch, 0);
+  return top;
+}
+export function fitArmReach(fig, margin) {
+  const arms = [fig && fig.leftArm, fig && fig.rightArm].filter((a) => a && a.pivot && a.pivot.position && a.pivot.scale);
+  // ⚠ 量不到就什麼都不做(回傳 1)——headGroup/position 缺一不可。
+  //   本檔的契約是「缺哪個就略過哪段」,不可以因為量不到就拋例外把整個迴圈打斷。
+  const head = fig && fig.headGroup;
+  if (!arms.length || !head || !head.position) return 1;
+  const headRise = chainRise(head);                          // ≈ 頭半徑(含帽)
+  const headTop = head.position.y + headRise;
+  /* ⚠ margin 預設**跟著頭的大小按比例**,不是絕對值:實測各站觀眾大小差三倍
+     (肩高 0.37~1.72),寫死 0.12 對小人偶是「舉超高」、對大人偶等於沒留餘裕。
+     0.8×頭半徑 ≈ 「指尖比頭頂高出大半顆頭」,在任何尺度下看起來都是高舉過頭。 */
+  if (margin === undefined) margin = (headRise || 0.16) * 0.8;
+  let scale = 1;
+  for (const arm of arms) {
+    const len = -chainDrop(arm.pivot);                       // 手臂總長(正值)
+    if (!(len > 0)) continue;                                // 量不到長度(沒有幾何)就跳過
+    const need = headTop + margin - arm.pivot.position.y;     // 舉直要達到的長度
+    const k = need / len;
+    if (k > scale) scale = k;
+  }
+  if (!Number.isFinite(scale)) return 1;
+  scale = Math.min(2.4, Math.max(1, scale));
+  if (scale > 1.001) for (const arm of arms) arm.pivot.scale.y = scale;
+  return scale;
+}
+
 export function animateCrowdCheer(crowdFigs, time, opts = {}) {
   if (!crowdFigs) return;
   const {
@@ -152,6 +217,9 @@ export function animateCrowdCheer(crowdFigs, time, opts = {}) {
   for (const c of crowdFigs) {
     const f = c && c.fig;
     if (!f) continue;
+    // 第一次見到這個人偶時量一次手臂夠不夠長,不夠就拉長(見 fitArmReach)。
+    // 用 opts.fitArms === false 可以關掉(人物工廠已經自己給足長度的站)。
+    if (c._fit === undefined) c._fit = opts.fitArms === false ? 1 : fitArmReach(f, opts.armMargin);
     const ph = c.phase || 0;
     // 慢頻左右看:歡呼時擺幅加大(看向得分的地方、彼此對看)
     if (f.headGroup) f.headGroup.rotation.y = Math.sin(time * 0.9 + ph) * headSwing * (0.6 + 0.8 * amp);
