@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { InputManager } from "./input.js";
 import { loadSettings, saveSettings, loadSavedGame, saveGameState } from "./storage.js";
-import { animateIdleHead, animateCrowdCheer, EAR_SAFE_PHI } from "./idle-life.js"; // idle 生動共用資產(3d-figure-kit)
+import { animateIdleHead, animateCrowdCheer, EAR_SAFE_PHI, crowdCheer } from "./idle-life.js"; // idle 生動共用資產(3d-figure-kit)
 import { createWaterSurface, createLaneRope, applyBuoyancy, SplashSystem } from "./water.js"; // water-kit:水面/浮力/水花(整檔收割,一字不改)
 
 // —— 游泳(自由式)3D(swimming3d)——fork 自 speedskating3d(B1,LA 2028 夏奧皮)。
@@ -602,7 +602,7 @@ export class SwimmingGame {
   }
 
   animateCrowd() {
-    animateCrowdCheer(this.crowdFigures, this.time);
+    animateCrowdCheer(this.crowdFigures, this.time, { cheer: crowdCheer(this).stepAt(this.time) });
   }
 
   // idle 生動:主選單/出發前——整顆頭偶爾平滑轉一下+微笑(邏輯在共用資產 idle-life.js)

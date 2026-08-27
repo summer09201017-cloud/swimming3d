@@ -3,6 +3,7 @@ import { SwimmingGame, GAME_MODES } from "./game.js";
 import { AudioManager } from "./audio.js";
 import { speakLine, setVoiceEnabled } from "./voice.js";
 import { hasSavedGame, loadSettings, saveSettings } from "./storage.js";
+import { crowdCheer } from "./idle-life.js";   // 🙌 得分那一刻:畫面與聲音同一刻
 
 const ui = {
   canvas: document.querySelector("#gameCanvas"),
@@ -203,7 +204,7 @@ function handleGameEvent(event) {
     }
     case "turn-good": {
       audio.swish();
-      audio.crowdCheer(0.6);
+      audio.crowdCheer(0.6); crowdCheer(game).trigger(0.6);
       pushCommentary("蹬牆轉身!像魚雷一樣射出去!", "hot", "蹬牆轉身漂亮,像魚雷一樣射出去!");
       break;
     }
@@ -214,7 +215,7 @@ function handleGameEvent(event) {
     }
     case "last-lap": {
       audio.buzzer();
-      audio.crowdCheer(0.7);
+      audio.crowdCheer(0.7); crowdCheer(game).trigger(0.7);
       pushCommentary("最後一趟——衝啊!", "hot", "最後一趟了,衝回出發壁,加油!");
       break;
     }
@@ -248,7 +249,7 @@ function handleGameEvent(event) {
     }
     case "duel-end": {
       audio.horn();
-      audio.crowdCheer(1);
+      audio.crowdCheer(1); crowdCheer(game).trigger(1);
       audio.vibrate([110, 50, 120]);
       pushCommentary(
         event.winner === "p1" ? "P1(紅帽)獲勝!" : "P2(藍帽)獲勝!",
