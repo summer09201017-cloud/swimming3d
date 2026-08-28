@@ -204,6 +204,184 @@ export function fitArmReach(fig, margin) {
   return scale;
 }
 
+/* face-discover.js — 從 headGroup **自己認出**眉/眼/瞳(零相依,不 import three)
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * 為什麼要有這一支
+ * ─────────────────────────────────────────────────────────────────────────────
+ * `animateCrowdCheer` 的 `brows / eyes / pupils` 是可選欄位:人物工廠回傳了就會動,
+ * 沒回傳就靜默略過。2026-08-28 實測:**19 站的嘴都會動了,但眉/眼/瞳全部沒回傳**
+ * —— 每一站的臉其實都做好了(眼白、瞳孔、眉毛的 mesh 都在),只是變數名各不相同
+ * (`eyeL/eyeR`、`bL/bR`、`browL/browR`…),`return { ... }` 沒帶它們出來。
+ *
+ * 原本的做法是「逐站去改人物工廠的 return」——19 站只有 3 站長得一樣,
+ * 而人物工廠是全檔最敏感的地方(改壞=人臉爛掉),**硬套一定出事**。
+ *
+ * ⇒ 改成:引擎在第一次驅動這個人偶時,**掃一遍 headGroup、用結構特徵把五官認出來**
+ *   (同 `fitArmReach` 的「量一次、之後每幀純動畫」範式)。
+ *   認得出來就動,認不出來就維持原本的靜默略過 —— **寧可少做,也不要認錯**。
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * 怎麼認(全部是結構特徵,不靠變數名)
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ① 只認**左右鏡像成對**的 mesh:x 相反、y/z 相同、大小相近。
+ *    ⇒ 嘴(單顆)、鼻、帽(單顆)自動出局。
+ * ② 眼白 = 最亮的那一對,而且在**臉的正面**(|z| 最大那一側)。
+ *    ⇒ 耳朵雖然也是一對,但耳朵是膚色(不夠亮)而且 z≈0(在兩側)⇒ 出局。
+ * ③ 瞳孔 = 暗色、比眼白**小**、和眼白**同一個 x、同一個高度**、而且更靠臉外側。
+ * ④ 眉毛 = 暗色、**扁的**(寬 > 高)、在眼白**上方**。
+ * ⚠ 每一項都要求「和眼白對得上」才收——認不到眼白就整個放棄,不亂猜。
+ */
+
+/* 累加到 root 為止的局部座標。★ 不用 Matrix4:本檔不 import three,
+   而且只拿來做**相對比較**(誰在誰上面、誰在誰外面),共同偏移不影響判斷。 */
+function localPos(obj, root) {
+  let x = 0, y = 0, z = 0, o = obj;
+  let guard = 0;
+  while (o && o !== root && guard++ < 64) { x += o.position.x; y += o.position.y; z += o.position.z; o = o.parent; }
+  return o === root ? { x, y, z } : null;   // 不在 root 底下就不算
+}
+
+/* 量一個 mesh 的長寬高:優先讀 geometry.parameters(便宜、不必算 bounding box) */
+function meshSize(o) {
+  const g = o.geometry;
+  const p = (g && g.parameters) || {};
+  if (p.radius !== undefined) {
+    const r = p.radius * 2;
+    return { w: r * (o.scale ? o.scale.x : 1), h: (p.height !== undefined ? p.height + r : r) * (o.scale ? o.scale.y : 1), d: r * (o.scale ? o.scale.z : 1) };
+  }
+  if (p.width !== undefined) {
+    return { w: p.width * (o.scale ? o.scale.x : 1), h: p.height * (o.scale ? o.scale.y : 1), d: p.depth * (o.scale ? o.scale.z : 1) };
+  }
+  if (g && g.boundingBox) {
+    const b = g.boundingBox;
+    return { w: b.max.x - b.min.x, h: b.max.y - b.min.y, d: b.max.z - b.min.z };
+  }
+  return null;   // 量不到就不參加(寧可少做)
+}
+
+function luminance(o) {
+  const m = Array.isArray(o.material) ? o.material[0] : o.material;
+  const c = m && m.color;
+  if (!c || typeof c.r !== "number") return 0.5;          // 量不到顏色 = 不表態
+  return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
+}
+
+/* 掃出 headGroup 底下所有「可比較」的 mesh */
+function collect(head) {
+  const out = [];
+  const walk = (o) => {
+    if (!o) return;
+    if (o !== head && o.isMesh && !o.isInstancedMesh && o.position && o.geometry) {
+      const p = localPos(o, head);
+      const s = p && meshSize(o);
+      if (p && s) out.push({ o, x: p.x, y: p.y, z: p.z, w: s.w, h: s.h, d: s.d, lum: luminance(o), big: Math.max(s.w, s.h, s.d) });
+    }
+    const kids = o.children || [];
+    for (let i = 0; i < kids.length; i++) walk(kids[i]);
+  };
+  walk(head);
+  return out;
+}
+
+/* 找出所有「左右鏡像成對」的組合 */
+function mirrorPairs(items, tol) {
+  const pairs = [];
+  for (let i = 0; i < items.length; i++) {
+    for (let j = i + 1; j < items.length; j++) {
+      const a = items[i], b = items[j];
+      if (Math.abs(a.x + b.x) > tol) continue;              // x 要相反
+      if (Math.abs(a.x) < tol) continue;                    // 落在中線的不算(鼻/嘴)
+      if (Math.abs(a.y - b.y) > tol) continue;              // 同高
+      if (Math.abs(a.z - b.z) > tol) continue;              // 同深
+      if (Math.abs(a.big - b.big) > Math.max(a.big, b.big) * 0.34) continue;  // 大小相近
+      const l = a.x <= b.x ? a : b, r = a.x <= b.x ? b : a;  // l = x 較小那一邊
+      pairs.push({ l, r, x: Math.abs(l.x), y: (a.y + b.y) / 2, z: (a.z + b.z) / 2, big: (a.big + b.big) / 2, lum: (a.lum + b.lum) / 2 });
+    }
+  }
+  return pairs;
+}
+
+/* 主函式:回傳 { brows?, eyes?, pupils? },每一項都是 { l, r } 的 Mesh。
+   認不出來的就不放進去(呼叫端照原本的「缺哪個略過哪段」處理)。 */
+export function discoverFaceParts(fig) {
+  const out = {};
+  const head = fig && fig.headGroup;
+  if (!head || !head.children) return out;
+
+  const items = collect(head);
+  if (items.length < 2) return out;
+
+  // 頭半徑:拿最大的那個 mesh 當頭(帽子可能更大,取 max 仍是同一個量級)
+  let R = 0;
+  for (const it of items) if (it.big > R) R = it.big;
+  R = R / 2 || 0.15;
+  const tol = R * 0.16;
+
+  const pairs = mirrorPairs(items, tol);
+  if (!pairs.length) return out;
+
+  /* ② 眼白:最亮、而且**長在臉的正面**的一對。
+     ⚠⚠ 光看亮度會把**耳朵**認成眼睛:實測膚色 0xf0d3aa 的 lum = **0.84**,
+       離白色 1.0 只差 0.16,而且各站膚色深淺不一(0xd9a06f 只有 0.67)
+       ⇒ 亮度門檻怎麼調都會有站踩線。**位置才是可靠的判準**:
+         · 耳朵在頭的兩側 ⇒ z ≈ 0、|x| ≈ 頭半徑
+         · 眼睛在臉的正面 ⇒ |z| 明顯大於 0,而且比 |x| 大
+       (這一條是自測「只有耳朵時不可以認成眼睛」逼出來的。) */
+  let eyes = null;
+  for (const p of pairs) {
+    if (p.lum < 0.88) continue;                 // 白眼白(≥0.98)過得了,最淺的膚色(0.84)過不了
+    if (Math.abs(p.z) < R * 0.25) continue;     // 貼在頭側面的(耳朵)出局
+    if (Math.abs(p.z) < Math.abs(p.x) * 0.7) continue;  // 更靠側面而不是正面的出局
+    if (!eyes || p.lum > eyes.lum + 0.02 || (Math.abs(p.lum - eyes.lum) <= 0.02 && Math.abs(p.z) > Math.abs(eyes.z))) eyes = p;
+  }
+  if (!eyes) return out;                     // 認不到眼白 ⇒ 整個放棄,不亂猜
+  out.eyes = { l: eyes.l.o, r: eyes.r.o };
+  const front = eyes.z >= 0 ? 1 : -1;        // 臉朝 +z 還是 -z
+
+  /* ③ 瞳孔:暗、比眼白小、x 對得上、同高、而且比眼白更靠外(在眼白前面) */
+  let pupils = null;
+  for (const p of pairs) {
+    if (p === eyes || p.lum > 0.4) continue;
+    if (p.big >= eyes.big * 0.95) continue;                    // 要比眼白小
+    if (Math.abs(p.x - eyes.x) > tol * 1.5) continue;          // 同一個 x
+    if (Math.abs(p.y - eyes.y) > R * 0.35) continue;           // 同一個高度
+    if (p.z * front < eyes.z * front - tol) continue;          // 不可以在眼白後面
+    if (!pupils || p.z * front > pupils.z * front) pupils = p;  // 取最前面那一對
+  }
+  if (pupils) out.pupils = { l: pupils.l.o, r: pupils.r.o };
+
+  /* ④ 眉毛:暗、扁(寬 > 高)、在眼白上方、大致在同一個臉面上 */
+  let brows = null;
+  for (const p of pairs) {
+    if (p === eyes || p === pupils || p.lum > 0.45) continue;
+    if (p.y <= eyes.y + tol * 0.5) continue;                   // 一定要在眼睛上面
+    if (p.y > eyes.y + R * 1.1) continue;                      // 太高的是帽緣不是眉毛
+    if (p.z * front <= 0) continue;                            // 要在臉的正面
+    const flat = p.l.w > p.l.h * 1.4;                          // 扁的才是眉毛
+    if (!flat) continue;
+    if (!brows || p.y < brows.y) brows = p;                     // 取最靠近眼睛的一對
+  }
+  if (brows) out.brows = { l: brows.l.o, r: brows.r.o };
+
+  /* ⑤ 嘴:臉中線上、眼睛**下方**的那一個(單顆,不是一對)。
+     實測 soccer3d 的觀眾嘴是一顆 TorusGeometry,工廠沒回傳 ⇒ 90 位觀眾的嘴從來不會動。
+     ⚠ 判準要嚴:必須在中線(|x| 很小)、在眼睛下面、在臉的正面、而且比頭小很多
+        —— 寧可漏掉也不要把鼻子或下巴當成嘴去拉長。 */
+  let mouth = null;
+  for (const it of items) {
+    if (it === eyes.l || it === eyes.r) continue;
+    if (Math.abs(it.x) > tol * 0.8) continue;                  // 要在中線
+    if (it.y > eyes.y - R * 0.15) continue;                    // 要在眼睛下面
+    if (it.z * front < R * 0.4) continue;                      // 要在臉的正面
+    if (it.big > eyes.big * 3.2) continue;                     // 太大的是頭/下巴
+    if (!mouth || it.y < mouth.y) mouth = it;                  // 取最低的那一個
+  }
+  if (mouth) out.smile = mouth.o;
+
+  return out;
+}
+
 export function animateCrowdCheer(crowdFigs, time, opts = {}) {
   if (!crowdFigs) return;
   const {
@@ -220,6 +398,20 @@ export function animateCrowdCheer(crowdFigs, time, opts = {}) {
     // 第一次見到這個人偶時量一次手臂夠不夠長,不夠就拉長(見 fitArmReach)。
     // 用 opts.fitArms === false 可以關掉(人物工廠已經自己給足長度的站)。
     if (c._fit === undefined) c._fit = opts.fitArms === false ? 1 : fitArmReach(f, opts.armMargin);
+    /* 第一次見到這個人偶時,把工廠沒回傳的眉/眼/瞳**自己認出來**(見 discoverFaceParts)。
+       ⚠ 只補「工廠沒給」的那幾個 —— 工廠明講的一律優先,絕不覆蓋。
+       認不出來就維持 undefined,下面照原本的「缺哪個略過哪段」處理。
+       要關掉:opts.discoverFace === false。 */
+    if (c._face === undefined) {
+      c._face = 1;
+      if (opts.discoverFace !== false && (!f.brows || !f.eyes || !f.pupils || !f.smile)) {
+        const found = discoverFaceParts(f);
+        if (!f.eyes && found.eyes) f.eyes = found.eyes;
+        if (!f.pupils && found.pupils) f.pupils = found.pupils;
+        if (!f.brows && found.brows) f.brows = found.brows;
+        if (!f.smile && found.smile) f.smile = found.smile;
+      }
+    }
     const ph = c.phase || 0;
     // 慢頻左右看:歡呼時擺幅加大(看向得分的地方、彼此對看)
     if (f.headGroup) f.headGroup.rotation.y = Math.sin(time * 0.9 + ph) * headSwing * (0.6 + 0.8 * amp);
@@ -261,10 +453,12 @@ export function animateCrowdCheer(crowdFigs, time, opts = {}) {
     if (brows) {
       const up = open;   // 與嘴同一條臉的節奏(挑眉與張嘴同拍才像在喊)
       for (let i = 0; i < 2; i++) {
-        const b = brows[i]; if (!b) continue;
+        const b = brows[i]; if (!b || !b.position) continue;
+        // ⚠ 真的 three Mesh 一定有 userData,但自動辨識可能撈到別人塞進場景的物件 ⇒ 補上就好,不炸
+        if (!b.userData) b.userData = {};
         if (b.userData._y0 === undefined) b.userData._y0 = b.position.y; // 記基準,只記一次
         b.position.y = b.userData._y0 + up * 0.034;
-        b.rotation.z = (i === 0 ? 1 : -1) * up * 0.30; // 外端上挑=興奮
+        if (b.rotation) b.rotation.z = (i === 0 ? 1 : -1) * up * 0.30; // 外端上挑=興奮
       }
     }
     // 眼睛睜大(可選)——與挑眉一起才讀得出「開心」,只放大瞳孔會變成「驚嚇」
